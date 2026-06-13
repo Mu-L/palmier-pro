@@ -12,6 +12,7 @@ enum FrameSampler {
         var coverageFloor: Double = 8.0
         var promoteDiff: Float = 12
         var maxSize = CGSize(width: 512, height: 512)
+        var highResEdge: CGFloat = 3000
     }
 
     struct Frame {
@@ -42,15 +43,24 @@ enum FrameSampler {
         options: Options,
         emit: (Frame) -> Void
     ) async throws {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        let asset = AVURLAsset(url: url)
+        var interval = options.candidateInterval
+        if let track = try? await asset.loadTracks(withMediaType: .video).first,
+           let size = try? await track.load(.naturalSize),
+           max(abs(size.width), abs(size.height)) >= options.highResEdge {
+            interval *= 2
+        }
+
+        let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = options.maxSize
-        let tolerance = CMTime(seconds: options.candidateInterval / 2, preferredTimescale: 600)
+        // ≥1s lets the decoder grab the nearest sync frame
+        let tolerance = CMTime(seconds: max(interval / 2, 1.0), preferredTimescale: 600)
         generator.requestedTimeToleranceBefore = tolerance
         generator.requestedTimeToleranceAfter = tolerance
 
         guard duration > 0 else { return }
-        var seconds = Array(stride(from: options.candidateInterval / 2, to: duration, by: options.candidateInterval))
+        var seconds = Array(stride(from: interval / 2, to: duration, by: interval))
         if seconds.isEmpty { seconds = [duration / 2] }
         let times = seconds.map { CMTime(seconds: $0, preferredTimescale: 600) }
 
