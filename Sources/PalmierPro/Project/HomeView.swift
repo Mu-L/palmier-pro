@@ -5,6 +5,8 @@ struct HomeView: View {
         GridItem(.adaptive(minimum: 140, maximum: 170), spacing: AppTheme.Spacing.xl)
     ]
 
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+
     var body: some View {
         HStack(spacing: 0) {
             HomeSidebar()
@@ -18,6 +20,11 @@ struct HomeView: View {
         .background(.ultraThinMaterial)
         .focusEffectDisabled()
         .task { await VisualModelLoader.shared.prepare() }
+        .overlay {
+            if !hasSeenWelcome {
+                WelcomeOverlay { withAnimation { hasSeenWelcome = true } }
+            }
+        }
     }
 
     private var content: some View {

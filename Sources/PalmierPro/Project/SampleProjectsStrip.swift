@@ -50,19 +50,17 @@ struct SampleProjectsStrip: View {
     }
 
     private func start(_ sample: SampleProjectService.Summary) {
-        let options = ProjectOpenOptions(startTutorial: true)
-        if let cached = SampleProjectService.shared.cachedURL(slug: sample.slug) {
-            AppState.shared.openProject(at: cached, register: false, options: options)
+        if SampleProjectService.shared.cachedURL(slug: sample.slug) != nil {
+            Task { try? await AppState.shared.openSample(slug: sample.slug, startTutorial: true) }
             return
         }
         activeDownload = SampleDownload(slug: sample.slug)
         Task {
             do {
-                let url = try await SampleProjectService.shared.materialize(slug: sample.slug) { progress in
+                try await AppState.shared.openSample(slug: sample.slug, startTutorial: true) { progress in
                     activeDownload?.progress = progress
                 }
                 activeDownload = nil
-                AppState.shared.openProject(at: url, register: false, options: options)
             } catch {
                 activeDownload?.failed = true
             }
