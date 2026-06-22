@@ -7,8 +7,16 @@ struct InspectorView: View {
     enum ClipTab: String, Hashable {
         case text = "Text"
         case video = "Video"
+        case effects = "Adjust"
         case audio = "Audio"
         case ai = "AI Edit"
+    }
+
+    enum AdjustTab: String, CaseIterable, Hashable {
+        case basic = "Basic"
+        case curves = "Curves"
+        case wheels = "Wheels"
+        case effects = "Effects"
     }
 
     enum AssetTab: String, Hashable {
@@ -17,35 +25,12 @@ struct InspectorView: View {
     }
 
     @State private var preferredTab: ClipTab = .video
+    @State private var adjustSubTab: AdjustTab = .basic
     @State private var preferredAssetTab: AssetTab = .details
     @State private var transformExpanded = true
 
-    private var headerTitle: String {
-        if selectedVisualClip != nil || selectedAudioClip != nil { return "Inspector" }
-        if selectedMediaAsset != nil { return "Source" }
-        return "Timeline"
-    }
-
-    private var headerIcon: String {
-        if selectedVisualClip != nil || selectedAudioClip != nil { return "slider.horizontal.3" }
-        return "info.circle"
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Plain header
-            HStack(spacing: AppTheme.Spacing.xs) {
-                Image(systemName: editor.isMarqueeSelecting ? "slider.horizontal.3" : headerIcon)
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                Text(editor.isMarqueeSelecting ? "Inspector" : headerTitle)
-                    .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
-                    .foregroundStyle(AppTheme.Text.secondaryColor)
-                Spacer()
-            }
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .panelHeaderBar()
-
             if editor.isMarqueeSelecting {
                 marqueeSelectionSummary
             } else if selectedVisualClip != nil || selectedAudioClip != nil {
@@ -176,7 +161,10 @@ struct InspectorView: View {
 
         var tabs: [ClipTab] = []
         if isSingleText { tabs.append(.text) }
-        if !nonText.isEmpty { tabs.append(.video) }
+        if !nonText.isEmpty {
+            tabs.append(.video)
+            tabs.append(.effects)
+        }
         if !audios.isEmpty { tabs.append(.audio) }
         if aiEditEligible && !AccountService.shared.isMisconfigured { tabs.append(.ai) }
         return tabs
@@ -227,6 +215,8 @@ struct InspectorView: View {
                                 if let v = selectedVisualClip, v.mediaType == .text { TextTab(clip: v) }
                             case .video:
                                 videoTabContent()
+                            case .effects:
+                                effectsTabContent()
                             case .audio:
                                 audioTabContent()
                             case .ai, .none:
@@ -241,18 +231,22 @@ struct InspectorView: View {
     }
 
     private func tabBar(_ tabs: [ClipTab]) -> some View {
-        genericTabBar(titles: tabs.map(\.rawValue), selected: activeTab?.rawValue) { title in
+        genericTabBar(titles: tabs.map(\.rawValue), selected: activeTab?.rawValue, raisedBackground: true) { title in
             if let tab = tabs.first(where: { $0.rawValue == title }) { preferredTab = tab }
         }
     }
 
     private func assetTabBar(_ tabs: [AssetTab]) -> some View {
-        genericTabBar(titles: tabs.map(\.rawValue), selected: preferredAssetTab.rawValue) { title in
+        genericTabBar(titles: tabs.map(\.rawValue), selected: preferredAssetTab.rawValue, raisedBackground: true) { title in
             if let tab = tabs.first(where: { $0.rawValue == title }) { preferredAssetTab = tab }
         }
     }
 
-    private func genericTabBar(titles: [String], selected: String?, onSelect: @escaping (String) -> Void) -> some View {
+    private func genericTabBar(
+        titles: [String], selected: String?,
+        raisedBackground: Bool = false,
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
         HStack(spacing: AppTheme.Spacing.md) {
             ForEach(titles, id: \.self) { title in
                 let isActive = selected == title
@@ -280,6 +274,35 @@ struct InspectorView: View {
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.top, AppTheme.Spacing.xs)
+        .background(raisedBackground ? AppTheme.Background.raisedColor : Color.clear)
+        .overlay(alignment: .bottom) {
+            if raisedBackground {
+                Rectangle().fill(AppTheme.Border.primaryColor).frame(height: AppTheme.BorderWidth.thin)
+            }
+        }
+    }
+
+    /// Capsule segmented control — used for the Adjust sub-tabs.
+    private func capsuleTabBar(titles: [String], selected: String?, onSelect: @escaping (String) -> Void) -> some View {
+        HStack(spacing: 0) {
+            ForEach(titles, id: \.self) { title in
+                let isActive = selected == title
+                Button { onSelect(title) } label: {
+                    Text(title)
+                        .font(.system(size: AppTheme.FontSize.xs, weight: isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, AppTheme.Spacing.xs)
+                        .background {
+                            if isActive { Capsule().fill(AppTheme.Background.prominentColor) }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(AppTheme.Spacing.xxs)
+        .background(Capsule().fill(AppTheme.Background.surfaceColor))
     }
 
     @ViewBuilder
@@ -438,6 +461,247 @@ struct InspectorView: View {
     }
 
 
+    // MARK: - Effects Tab
+
+    private struct EffectControl: Hashable {
+        let effectId: String
+        let paramKey: String
+        var label: String? = nil
+        var gradient: [Color]? = nil
+    }
+
+    /// Basic › Tone.
+    private var toneControls: [EffectControl] {
+        [
+            EffectControl(effectId: "color.exposure", paramKey: "ev"),
+            EffectControl(effectId: "color.contrast", paramKey: "amount"),
+            EffectControl(effectId: "color.highlightsShadows", paramKey: "highlights"),
+            EffectControl(effectId: "color.highlightsShadows", paramKey: "shadows"),
+            EffectControl(effectId: "color.blacksWhites", paramKey: "blacks"),
+            EffectControl(effectId: "color.blacksWhites", paramKey: "whites"),
+        ]
+    }
+
+    /// Basic › Color (white balance + presence).
+    private var colorBalanceControls: [EffectControl] {
+        [
+            EffectControl(effectId: "color.temperature", paramKey: "temperature", gradient: AppTheme.Slider.tempGradient),
+            EffectControl(effectId: "color.temperature", paramKey: "tint", gradient: AppTheme.Slider.tintGradient),
+            EffectControl(effectId: "color.vibrance", paramKey: "amount"),
+            EffectControl(effectId: "color.saturation", paramKey: "amount"),
+        ]
+    }
+
+    /// Blur/sharpen/stylize as single always-on rows, labeled by effect name.
+    private var stylizeControls: [EffectControl] {
+        [
+            EffectControl(effectId: "blur.gaussian", paramKey: "radius", label: "Blur"),
+            EffectControl(effectId: "blur.sharpen", paramKey: "amount", label: "Sharpen"),
+            EffectControl(effectId: "stylize.vignette", paramKey: "intensity", label: "Vignette"),
+        ]
+    }
+
+    /// Canonical order the fixed adjustment sections insert their effects in.
+    private var alwaysOnEffectOrder: [String] {
+        ["color.exposure", "color.contrast", "color.highlightsShadows", "color.blacksWhites",
+         "color.temperature", "color.vibrance", "color.saturation",
+         "blur.gaussian", "blur.sharpen", "stylize.vignette"]
+    }
+
+    @ViewBuilder
+    private func effectsTabContent() -> some View {
+        let clips = nonTextVisualClips
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            capsuleTabBar(titles: AdjustTab.allCases.map(\.rawValue), selected: adjustSubTab.rawValue) { title in
+                if let tab = AdjustTab(rawValue: title) { adjustSubTab = tab }
+            }
+            switch adjustSubTab {
+            case .basic:
+                adjustmentSection(title: "Tone", controls: toneControls, clips: clips)
+                adjustmentSection(title: "Color", controls: colorBalanceControls, clips: clips)
+            case .curves:
+                comingSoonSection("Curves")
+            case .wheels:
+                comingSoonSection("Color wheels & HSL")
+            case .effects:
+                adjustmentSection(title: "Effects", controls: stylizeControls, clips: clips)
+            }
+        }
+    }
+
+    private func comingSoonSection(_ name: String) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            Text(name)
+                .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            Text("Coming soon.")
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, AppTheme.Spacing.xl)
+    }
+
+    // MARK: Always-on adjustment sections (Color, Effects)
+
+    @ViewBuilder
+    private func adjustmentSection(title: String, controls: [EffectControl], clips: [Clip]) -> some View {
+        let ids = Set(controls.map(\.effectId))
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                sectionTitleLabel(title: title)
+                Spacer()
+                if anyAdjusted(ids, clips: clips) {
+                    HoldToPreviewButton(
+                        onPress: { previewSection(ids, clips: clips, enabled: false) },
+                        onRelease: { previewSection(ids, clips: clips, enabled: true) }
+                    )
+                    resetButton(
+                        onReset: { resetEffects(ids, clips: clips, actionName: "Reset \(title)") },
+                        help: "Reset \(title.lowercased())"
+                    )
+                }
+            }
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                ForEach(controls, id: \.self) { control in
+                    adjustmentRow(control, clips: clips)
+                }
+            }
+            .padding(.leading, sectionContentIndent)
+        }
+    }
+
+    @ViewBuilder
+    private func adjustmentRow(_ control: EffectControl, clips: [Clip]) -> some View {
+        if let descriptor = EffectRegistry.descriptor(id: control.effectId),
+           let spec = descriptor.params.first(where: { $0.key == control.paramKey }) {
+            let label = control.label ?? spec.label
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Text(label)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .lineLimit(1)
+                    .frame(width: AppTheme.Slider.labelColumn, alignment: .leading)
+                AdjustSlider(
+                    value: sharedClipValue(clips) { controlValue($0, control, spec) } ?? spec.defaultValue,
+                    range: spec.range,
+                    gradient: control.gradient,
+                    defaultValue: spec.defaultValue,
+                    onChanged: { setControlParam(control, label: label, value: $0, clips: clips, commit: false) },
+                    onCommit: { setControlParam(control, label: label, value: $0, clips: clips, commit: true) }
+                )
+                ScrubbableNumberField(
+                    value: sharedClipValue(clips) { controlValue($0, control, spec) },
+                    range: spec.range,
+                    format: effectParamFormat(spec),
+                    valueSuffix: spec.unit.isEmpty ? "" : " \(spec.unit)",
+                    dragSensitivity: effectParamSensitivity(spec),
+                    fieldWidth: 50,
+                    onChanged: { setControlParam(control, label: label, value: $0, clips: clips, commit: false) }
+                ) { setControlParam(control, label: label, value: $0, clips: clips, commit: true) }
+            }
+            .frame(height: KeyframesMetrics.rowHeight)
+        }
+    }
+
+    private func controlValue(_ clip: Clip, _ control: EffectControl, _ spec: EffectParamSpec) -> Double {
+        (clip.effects ?? []).first { $0.type == control.effectId }?
+            .params[control.paramKey]?.resolved(at: 0, default: spec.defaultValue) ?? spec.defaultValue
+    }
+
+    private func setControlParam(
+        _ control: EffectControl, label: String, value: Double, clips: [Clip], commit: Bool
+    ) {
+        let mutate: (inout [Effect]) -> Void = { [self] effects in
+            upsertControl(&effects, control: control, value: value)
+        }
+        if commit {
+            commitEffects(clips, actionName: "Change \(label)", mutate)
+        } else {
+            applyEffects(clips, mutate)
+        }
+    }
+
+    /// Upsert one param into the singleton effect of its type, inserting in canonical
+    /// order when first touched and pruning it when every param returns to default
+    /// (so a neutral adjustment carries no effect / no render pass).
+    private func upsertControl(_ effects: inout [Effect], control: EffectControl, value: Double) {
+        guard let descriptor = EffectRegistry.descriptor(id: control.effectId) else { return }
+        if let i = effects.firstIndex(where: { $0.type == control.effectId }) {
+            effects[i].params[control.paramKey] = EffectParam(value: value)
+            let allDefault = descriptor.params.allSatisfy { spec in
+                (effects[i].params[spec.key]?.value ?? spec.defaultValue) == spec.defaultValue
+            }
+            if allDefault { effects.remove(at: i) }
+        } else {
+            let paramDefault = descriptor.params.first { $0.key == control.paramKey }?.defaultValue
+            guard value != paramDefault else { return }
+            var effect = descriptor.makeEffect()
+            effect.params[control.paramKey] = EffectParam(value: value)
+            effects.insert(effect, at: alwaysOnInsertIndex(effects, for: control.effectId))
+        }
+    }
+
+    private func alwaysOnInsertIndex(_ effects: [Effect], for effectId: String) -> Int {
+        let rank = alwaysOnEffectOrder.firstIndex(of: effectId) ?? Int.max
+        return effects.firstIndex { (alwaysOnEffectOrder.firstIndex(of: $0.type) ?? Int.max) > rank } ?? effects.count
+    }
+
+    private func anyAdjusted(_ ids: Set<String>, clips: [Clip]) -> Bool {
+        clips.contains { ($0.effects ?? []).contains { ids.contains($0.type) } }
+    }
+
+    private func resetEffects(_ ids: Set<String>, clips: [Clip], actionName: String) {
+        commitEffects(clips, actionName: actionName) { effects in
+            effects.removeAll { ids.contains($0.type) }
+        }
+    }
+
+    /// Live preview of a section toggled off/on. Both go through the cheap
+    /// refresh-visuals path (no full composition rebuild), so the release doesn't flicker.
+    private func previewSection(_ ids: Set<String>, clips: [Clip], enabled: Bool) {
+        applyEffects(clips) { effects in
+            for i in effects.indices where ids.contains(effects[i].type) {
+                effects[i].enabled = enabled
+            }
+        }
+    }
+
+    private func effectParamFormat(_ spec: EffectParamSpec) -> String {
+        (spec.range.upperBound - spec.range.lowerBound) <= 20 ? "%.2f" : "%.0f"
+    }
+
+    private func effectParamSensitivity(_ spec: EffectParamSpec) -> Double {
+        max(0.01, (spec.range.upperBound - spec.range.lowerBound) / 200)
+    }
+
+    /// Live edit (no undo entry) — mirrors applyClipProperty's refresh-only path.
+    private func applyEffects(_ clips: [Clip], _ mutate: @escaping (inout [Effect]) -> Void) {
+        for clip in clips {
+            editor.applyClipProperty(clipId: clip.id) { c in
+                var effects = c.effects ?? []
+                mutate(&effects)
+                c.effects = effects.isEmpty ? nil : effects
+            }
+        }
+    }
+
+    /// One undoable entry across all selected clips.
+    private func commitEffects(
+        _ clips: [Clip], actionName: String, _ mutate: @escaping (inout [Effect]) -> Void
+    ) {
+        editor.undoManager?.beginUndoGrouping()
+        for clip in clips {
+            editor.commitClipProperty(clipId: clip.id) { c in
+                var effects = c.effects ?? []
+                mutate(&effects)
+                c.effects = effects.isEmpty ? nil : effects
+            }
+        }
+        editor.undoManager?.endUndoGrouping()
+        editor.undoManager?.setActionName(actionName)
+    }
+
     @ViewBuilder
     private func speedSection(clips: [Clip]) -> some View {
         if !clips.isEmpty {
@@ -467,15 +731,6 @@ struct InspectorView: View {
         for c in clips { commit(c) }
         editor.undoManager?.endUndoGrouping()
         editor.undoManager?.setActionName(actionName)
-    }
-
-    private func inspectorCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(AppTheme.Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                    .fill(Color.white.opacity(AppTheme.Opacity.subtle))
-            )
     }
 
     // MARK: - Transform Section

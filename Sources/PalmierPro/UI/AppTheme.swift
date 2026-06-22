@@ -64,6 +64,18 @@ enum AppTheme {
         )
     }
 
+    // MARK: - Adjust sliders
+
+    enum Slider {
+        static let trackHeight: CGFloat = 4
+        static let thumbSize: CGFloat = 10
+        static let labelColumn: CGFloat = 78
+        /// Temperature track: cool blue (low) → warm amber (high).
+        static let tempGradient = [Color(red: 0.32, green: 0.55, blue: 0.92), Color(red: 0.95, green: 0.72, blue: 0.32)]
+        /// Tint track: green (low) → magenta (high).
+        static let tintGradient = [Color(red: 0.42, green: 0.78, blue: 0.45), Color(red: 0.82, green: 0.38, blue: 0.72)]
+    }
+
     /// Monochrome silver shimmer
     static let aiGradient = LinearGradient(
         stops: [

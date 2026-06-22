@@ -57,14 +57,3 @@ extension Effect {
         Effect(type: type, params: values.mapValues { EffectParam(value: $0) })
     }
 }
-
-extension [Effect] {
-    /// Mutable lookup by effect id; assigning nil removes the entry.
-    subscript(safeId id: String) -> Effect? {
-        get { first { $0.id == id } }
-        set {
-            guard let index = firstIndex(where: { $0.id == id }) else { return }
-            if let newValue { self[index] = newValue } else { remove(at: index) }
-        }
-    }
-}
